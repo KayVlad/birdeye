@@ -1,0 +1,84 @@
+services:
+  frontend:
+    build: .
+    image: birdeye:local
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "${BIRDEYE_BIND_ADDRESS:-127.0.0.1}:${BIRDEYE_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.5
+    pids_limit: 32
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: birdeye-api:local
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      BIRDEYE_ADMIN_TOKEN_FILE: /run/secrets/admin_token
+      BIRDEYE_WORKER_TOKEN_FILE: /run/secrets/worker_token
+    secrets: [admin_token, worker_token]
+    volumes: [birdeye-data:/data]
+    mem_limit: 256m
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  scheduler:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: birdeye-api:local
+    command: [node, backend/scheduler.cjs]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes: [birdeye-data:/data]
+    mem_limit: 128m
+    pids_limit: 32
+    healthcheck:
+      test: [CMD, node, -e, "const d=new(require('node:sqlite').DatabaseSync)('/data/birdeye.db');const r=d.prepare(\"SELECT seen FROM service_status WHERE name='scheduler'\").get();process.exit(r&&Date.now()-r.seen<10000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+volumes:
+  birdeye-data:
+
+secrets:
+  admin_token:
+    file: .secrets/admin-token
+  worker_token:
+    file: .secrets/worker-token

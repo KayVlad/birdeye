@@ -1,0 +1,29 @@
+[Unit]
+Description=Birdeye host script worker
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=birdeye
+Group=birdeye
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/birdeye/worker.py --config /etc/birdeye/worker.json
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+TasksMax=128
+MemoryMax=512M
+CPUQuota=100%
+StateDirectory=birdeye-worker
+StateDirectoryMode=0700
+LogsDirectory=birdeye
+LogsDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target
